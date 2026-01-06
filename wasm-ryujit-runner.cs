@@ -18,11 +18,14 @@ Option<DirectoryInfo> oCheckout = new("--checkout") {
 Option<DirectoryInfo> oTempDir = new("--temp-dir") {
     Description = "The temporary directory to use."
 };
+Option<bool> oKeepTempDir = new("--keep-temp-dir") {
+    Description = "If the temporary directory is automatically generated, keep it around after running."
+};
 Option<bool> oAutoBuild = new("--auto-build") {
     Description = "Automatically perform builds if possible."
 };
-Option<bool> oKeepTempDir = new("--keep-temp-dir") {
-    Description = "If the temporary directory is automatically generated, keep it around after running."
+Option<bool> oInspect = new("--inspect") {
+    Description = "Pass the --inspect switch to node, enabling debugging."
 };
 Option<FileInfo> oR2RPath = new("--r2r-path") {
     Description = "The location of the R2R binary."
@@ -38,8 +41,9 @@ RootCommand rootCommand = new("Wasm RyuJIT Simple Test Harness");
 rootCommand.Options.Add(oConfiguration);
 rootCommand.Options.Add(oCheckout);
 rootCommand.Options.Add(oTempDir);
-rootCommand.Options.Add(oAutoBuild);
 rootCommand.Options.Add(oKeepTempDir);
+rootCommand.Options.Add(oAutoBuild);
+rootCommand.Options.Add(oInspect);
 rootCommand.Options.Add(oR2RPath);
 rootCommand.Options.Add(oTestHarnessPath);
 rootCommand.Options.Add(oAssembly);
@@ -140,7 +144,11 @@ try {
     if (!File.Exists(testHarnessPath))
         throw new FileNotFoundException($"Test harness not found - maybe pass --test-harness-path: {testHarnessPath}");
 
-    await RunChildProcess("node", $"\"{testHarnessPath}\" {outName}", tempDir);
+    var nodeArgs = "";
+    if (options.GetValue(oInspect))
+        nodeArgs += "--inspect --inspect-wait";
+
+    await RunChildProcess("node", $"{nodeArgs} \"{testHarnessPath}\" {outName}", tempDir);
 
     return 0;
 } finally {
