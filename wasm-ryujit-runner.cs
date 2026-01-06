@@ -17,6 +17,9 @@ Option<DirectoryInfo> oCheckout = new("--checkout") {
 Option<DirectoryInfo> oTempDir = new("--temp-dir") {
     Description = "The temporary directory to use."
 };
+Option<bool> oAutoBuild = new("--auto-build") {
+    Description = "Automatically perform builds if possible."
+};
 Option<bool> oKeepTempDir = new("--keep-temp-dir") {
     Description = "If the temporary directory is automatically generated, keep it around after running."
 };
@@ -31,25 +34,43 @@ RootCommand rootCommand = new("Wasm RyuJIT Simple Test Harness");
 rootCommand.Options.Add(oConfiguration);
 rootCommand.Options.Add(oCheckout);
 rootCommand.Options.Add(oTempDir);
+rootCommand.Options.Add(oAutoBuild);
 rootCommand.Options.Add(oKeepTempDir);
 rootCommand.Options.Add(oR2RPath);
 rootCommand.Options.Add(oAssembly);
 
 ParseResult options = rootCommand.Parse(args);
 if (options.Errors.Count != 0) {
-    foreach (var parseError in options.Errors) {
-        Console.Error.WriteLine(parseError.Message);
-    }
+    foreach (var parseError in options.Errors)
+        Log(parseError.Message);
     return 1;
 }
 
+var autoBuild = options.GetValue(oAutoBuild);
 var configuration = options.GetValue(oConfiguration) ?? "Debug";
 var checkout = options.GetValue(oCheckout)?.FullName ?? Environment.CurrentDirectory;
 var osName = "windows"; // FIXME
 var archName = "x64"; // FIXME
-var crossgenPath = Path.Combine(checkout, "artifacts", "bin", "coreclr", $"{osName}.{archName}.{configuration}", archName, "crossgen2", "crossgen2.exe");
+var crossgenPath = options.GetValue(oR2RPath)?.FullName ??
+    Path.Combine(checkout, "artifacts", "bin", "coreclr", $"{osName}.{archName}.{configuration}", archName, "crossgen2", "crossgen2.exe");
 if (!File.Exists(crossgenPath))
     throw new FileNotFoundException($"Not found - make sure to pass --checkout: {crossgenPath}");
+
+var coreRootPath = Path.Combine(checkout, "artifacts", "tests", "coreclr", $"browser.wasm.{configuration}", "Tests", "Core_Root");
+if (!Directory.Exists(coreRootPath) || Directory.GetFiles(coreRootPath, "*.dll").Length == 0) {
+    var msg = $"Not found: {coreRootPath}\\*.dll.";
+    if (!autoBuild)
+        throw new FileNotFoundException(msg);
+
+    Log("/// " + msg + " Attempting to build clr+libs for browser...");
+    await RunChildProcess(Path.Combine(checkout, "build.cmd"), $"-c {configuration} -lc Release -os browser clr+libs", checkout);
+
+    Log("/// Attempting to build browser core_root...");
+    await RunChildProcess(Path.Combine(checkout, "src", "tests", "build.cmd"), $"wasm browser generatelayoutonly", Path.Combine(checkout, "src", "tests"));
+
+    if (!Directory.Exists(coreRootPath) || Directory.GetFiles(coreRootPath, "*.dll").Length == 0)
+        throw new Exception($"Build failed to generate core_root at {coreRootPath}!");
+}
 
 var tempDir = options.GetValue(oTempDir)?.FullName;
 var keepTempDir = (tempDir != null) && Directory.Exists(tempDir);
@@ -69,7 +90,7 @@ try {
         throw new FileNotFoundException($"Not found - make sure to pass --assembly: {assemblyPath}");
 
     var rspPath = Path.Combine(tempDir, "cg2.rsp");
-    Console.WriteLine($"/// Generate '{rspPath}'...");
+    Log($"/// Generate '{rspPath}'...");
     using (var sw = new StreamWriter(rspPath, false, Encoding.UTF8)) {
         sw.WriteLine(@"--verbose
 --print-repro-instructions
@@ -78,7 +99,7 @@ try {
 --obj-format=wasm");
 
         sw.Write("-r:\"");
-        sw.Write(Path.Combine(checkout, "artifacts", "tests", "coreclr", $"browser.wasm.{configuration}", "Tests", "Core_Root", "*.dll"));
+        sw.Write(Path.Combine(coreRootPath, "*.dll"));
         sw.WriteLine("\"");
 
         sw.Write("--out:\"");
@@ -90,27 +111,43 @@ try {
         sw.WriteLine('"');
     }
 
-    Console.WriteLine($"/// Run '{crossgenPath} @{rspPath}'...");
-    await RunChildProcess(crossgenPath, "@" + rspPath);
+    await RunChildProcess(crossgenPath, "@" + rspPath, tempDir);
+
+    if (!File.Exists(outPath))
+        throw new FileNotFoundException($"Crossgen did not generate '{outPath}'!");
+    else
+        Log($"/// '{outPath}' generated. Preparing to run tests...");
 
     return 0;
 } finally {
     if (!keepTempDir) {
-        Console.WriteLine($"/// Delete '{tempDir}'...");
+        Log($"/// Delete '{tempDir}'...");
         Directory.Delete(tempDir, true);
     }
 }
 
-static async Task RunChildProcess (string process, string args) {
+static void Log (string text) {
+    var oldColor = Console.ForegroundColor;
+    try {
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.Error.WriteLine(text);
+    } finally {
+        Console.ForegroundColor = oldColor;
+    }
+}
+
+static async Task RunChildProcess (string process, string args, string cwd = null) {
     var proc = new Process() {
         StartInfo = {
             FileName = process,
             Arguments = args,
             UseShellExecute = false,
             // CreateNoWindow = true,
+            WorkingDirectory = cwd ?? "",
         },
     };
 
+    Log($"/// Run '\"{proc.StartInfo.FileName}\" {proc.StartInfo.Arguments}' in cwd '{cwd}'...");
     proc.Start();
     await proc.WaitForExitAsync();
 
