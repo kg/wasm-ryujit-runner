@@ -26,6 +26,9 @@ Option<bool> oKeepTempDir = new("--keep-temp-dir") {
 Option<FileInfo> oR2RPath = new("--r2r-path") {
     Description = "The location of the R2R binary."
 };
+Option<FileInfo> oTestHarnessPath = new("--test-harness-path") {
+    Description = "The location of the test harness."
+};
 Option<FileInfo> oAssembly = new("--assembly") {
     Description = "The assembly to R2R compile."
 };
@@ -37,6 +40,7 @@ rootCommand.Options.Add(oTempDir);
 rootCommand.Options.Add(oAutoBuild);
 rootCommand.Options.Add(oKeepTempDir);
 rootCommand.Options.Add(oR2RPath);
+rootCommand.Options.Add(oTestHarnessPath);
 rootCommand.Options.Add(oAssembly);
 
 ParseResult options = rootCommand.Parse(args);
@@ -53,12 +57,23 @@ var osName = "windows"; // FIXME
 var archName = "x64"; // FIXME
 var crossgenPath = options.GetValue(oR2RPath)?.FullName ??
     Path.Combine(checkout, "artifacts", "bin", "coreclr", $"{osName}.{archName}.{configuration}", archName, "crossgen2", "crossgen2.exe");
-if (!File.Exists(crossgenPath))
-    throw new FileNotFoundException($"Not found - make sure to pass --checkout: {crossgenPath}");
+if (!File.Exists(crossgenPath)) {
+    if (!autoBuild)
+        throw new FileNotFoundException($"Not found - maybe pass --checkout: {crossgenPath}");
+
+    if (Directory.Exists(Path.Combine(checkout, "src", "coreclr", "jit"))) {
+        Log($"/// Not found: '{crossgenPath}'. Attempting to build clr+libs to get a crossgen2 binary...");
+        await RunChildProcess(Path.Combine(checkout, "build.cmd"), $"-c {configuration} -lc Release clr+libs", checkout);
+
+        if (!File.Exists(crossgenPath))
+            throw new FileNotFoundException($"Build did not produce a crossgen2 binary!");
+    } else
+        throw new Exception($"Path does not appear to be a runtime checkout, Maybe pass --checkout: {checkout}");
+}
 
 var coreRootPath = Path.Combine(checkout, "artifacts", "tests", "coreclr", $"browser.wasm.{configuration}", "Tests", "Core_Root");
 if (!Directory.Exists(coreRootPath) || Directory.GetFiles(coreRootPath, "*.dll").Length == 0) {
-    var msg = $"Not found: {coreRootPath}\\*.dll.";
+    var msg = $"Not found: '{coreRootPath}\\*.dll'.";
     if (!autoBuild)
         throw new FileNotFoundException(msg);
 
@@ -117,6 +132,11 @@ try {
         throw new FileNotFoundException($"Crossgen did not generate '{outPath}'!");
     else
         Log($"/// '{outPath}' generated. Preparing to run tests...");
+
+    var testHarnessPath = options.GetValue(oTestHarnessPath)?.FullName ??
+        Path.Combine(Environment.CurrentDirectory, "wasm-ryujit-runner.mjs");
+    if (!File.Exists(testHarnessPath))
+        throw new FileNotFoundException($"Test harness not found - maybe pass --test-harness-path: {testHarnessPath}");
 
     return 0;
 } finally {
