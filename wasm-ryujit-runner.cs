@@ -7,6 +7,7 @@ using System;
 using System.Text;
 using System.CommandLine;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 Option<string> oConfiguration = new("--config") {
     Description = "The runtime build configuration to use."
@@ -97,7 +98,8 @@ if (tempDir == null) {
 }
 
 try {
-    var outPath = Path.Combine(tempDir, "test-module.wasm");
+    var outName = "test-module.wasm";
+    var outPath = Path.Combine(tempDir, outName);
     File.Delete(outPath);
 
     var assemblyPath = options.GetValue(oAssembly)?.FullName;
@@ -131,12 +133,14 @@ try {
     if (!File.Exists(outPath))
         throw new FileNotFoundException($"Crossgen did not generate '{outPath}'!");
     else
-        Log($"/// '{outPath}' generated. Preparing to run tests...");
+        Log($"/// '{outPath}' generated. Starting test harness...");
 
     var testHarnessPath = options.GetValue(oTestHarnessPath)?.FullName ??
-        Path.Combine(Environment.CurrentDirectory, "wasm-ryujit-runner.mjs");
+        Path.Combine(Path.GetDirectoryName(GetMySourceFilePath()), "wasm-ryujit-runner.mjs");
     if (!File.Exists(testHarnessPath))
         throw new FileNotFoundException($"Test harness not found - maybe pass --test-harness-path: {testHarnessPath}");
+
+    await RunChildProcess("node", $"\"{testHarnessPath}\" {outName}", tempDir);
 
     return 0;
 } finally {
@@ -145,6 +149,9 @@ try {
         Directory.Delete(tempDir, true);
     }
 }
+
+static string GetMySourceFilePath ([CallerFilePath]string filePath = "") =>
+    filePath;
 
 static void Log (string text) {
     var oldColor = Console.ForegroundColor;
@@ -156,7 +163,7 @@ static void Log (string text) {
     }
 }
 
-static async Task RunChildProcess (string process, string args, string cwd = null) {
+static async Task RunChildProcess (string process, string args, string cwd = "") {
     var proc = new Process() {
         StartInfo = {
             FileName = process,
@@ -172,5 +179,5 @@ static async Task RunChildProcess (string process, string args, string cwd = nul
     await proc.WaitForExitAsync();
 
     if (proc.ExitCode != 0)
-        throw new Exception($"Child process failed with exit code {proc.ExitCode}");
+        throw new Exception($"Child process '{process}' failed with exit code {proc.ExitCode}");
 }
