@@ -55,6 +55,10 @@ if (options.Errors.Count != 0) {
     return 1;
 }
 
+int sclExitCode = await options.InvokeAsync();
+if (sclExitCode != 0)
+    return sclExitCode;
+
 var autoBuild = options.GetValue(oAutoBuild);
 var configuration = options.GetValue(oConfiguration) ?? "Debug";
 var checkout = options.GetValue(oCheckout)?.FullName ?? Environment.CurrentDirectory;

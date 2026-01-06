@@ -12,6 +12,7 @@ try {
     const imports = {};
     const instance = await WebAssembly.instantiate(module, imports);
     console.log(`OK!`);
+    debugger;
 } catch (err) {
     debugger;
     throw err;
