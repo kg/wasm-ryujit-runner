@@ -71,6 +71,11 @@ var osName = "windows"; // FIXME
 var archName = "x64"; // FIXME
 var crossgenPath = options.GetValue(oR2RPath)?.FullName ??
     Path.Combine(checkout, "artifacts", "bin", "coreclr", $"{osName}.{archName}.{configuration}", archName, "crossgen2", "crossgen2.exe");
+
+var assemblyPath = options.GetValue(oAssembly)?.FullName;
+if (!File.Exists(assemblyPath))
+    throw new FileNotFoundException($"Not found - make sure to pass --assembly: {assemblyPath}");
+
 if (alwaysBuild || !File.Exists(crossgenPath)) {
     if (!autoBuild && !alwaysBuild)
         throw new FileNotFoundException($"Not found - maybe pass --checkout: {crossgenPath}");
@@ -115,10 +120,6 @@ try {
     var outName = "test-module.wasm";
     var outPath = Path.Combine(tempDir, outName);
     File.Delete(outPath);
-
-    var assemblyPath = options.GetValue(oAssembly)?.FullName;
-    if (!File.Exists(assemblyPath))
-        throw new FileNotFoundException($"Not found - make sure to pass --assembly: {assemblyPath}");
 
     var rspPath = Path.Combine(tempDir, "cg2.rsp");
     Log($"/// Generate '{rspPath}'...");
