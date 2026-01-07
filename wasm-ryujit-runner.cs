@@ -22,7 +22,10 @@ Option<bool> oKeepTempDir = new("--keep-temp-dir") {
     Description = "If the temporary directory is automatically generated, keep it around after running."
 };
 Option<bool> oAutoBuild = new("--auto-build") {
-    Description = "Automatically perform builds if possible."
+    Description = "Automatically perform builds if necessary."
+};
+Option<bool> oAlwaysBuild = new("--always-build") {
+    Description = "Always build the clr+libs subset."
 };
 Option<bool> oInspect = new("--inspect") {
     Description = "Pass the --inspect switch to node, enabling debugging."
@@ -43,6 +46,7 @@ rootCommand.Options.Add(oCheckout);
 rootCommand.Options.Add(oTempDir);
 rootCommand.Options.Add(oKeepTempDir);
 rootCommand.Options.Add(oAutoBuild);
+rootCommand.Options.Add(oAlwaysBuild);
 rootCommand.Options.Add(oInspect);
 rootCommand.Options.Add(oR2RPath);
 rootCommand.Options.Add(oTestHarnessPath);
@@ -59,19 +63,21 @@ int sclExitCode = await options.InvokeAsync();
 if (sclExitCode != 0)
     return sclExitCode;
 
-var autoBuild = options.GetValue(oAutoBuild);
+var alwaysBuild = options.GetValue(oAlwaysBuild);
+var autoBuild = options.GetValue(oAutoBuild) || alwaysBuild;
 var configuration = options.GetValue(oConfiguration) ?? "Debug";
 var checkout = options.GetValue(oCheckout)?.FullName ?? Environment.CurrentDirectory;
 var osName = "windows"; // FIXME
 var archName = "x64"; // FIXME
 var crossgenPath = options.GetValue(oR2RPath)?.FullName ??
     Path.Combine(checkout, "artifacts", "bin", "coreclr", $"{osName}.{archName}.{configuration}", archName, "crossgen2", "crossgen2.exe");
-if (!File.Exists(crossgenPath)) {
-    if (!autoBuild)
+if (alwaysBuild || !File.Exists(crossgenPath)) {
+    if (!autoBuild && !alwaysBuild)
         throw new FileNotFoundException($"Not found - maybe pass --checkout: {crossgenPath}");
 
     if (Directory.Exists(Path.Combine(checkout, "src", "coreclr", "jit"))) {
-        Log($"/// Not found: '{crossgenPath}'. Attempting to build clr+libs to get a crossgen2 binary...");
+        if (!alwaysBuild)
+            Log($"/// Not found: '{crossgenPath}'. Attempting to build clr+libs to get a crossgen2 binary...");
         await RunChildProcess(Path.Combine(checkout, "build.cmd"), $"-c {configuration} -lc Release clr+libs", checkout);
 
         if (!File.Exists(crossgenPath))
