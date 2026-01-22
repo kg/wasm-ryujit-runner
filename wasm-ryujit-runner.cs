@@ -12,6 +12,9 @@ using System.Runtime.CompilerServices;
 Option<string> oConfiguration = new("--config") {
     Description = "The runtime build configuration to use."
 };
+Option<string> oJsExpr = new("--js-expr") {
+    Description = "The javascript expression to evaluate on the loaded module. `module`, `instance` and `exports` are available."
+};
 Option<DirectoryInfo> oCheckout = new("--checkout") {
     Description = "The location of your .NET checkout."
 };
@@ -42,6 +45,7 @@ Option<FileInfo> oAssembly = new("--assembly") {
 
 RootCommand rootCommand = new("Wasm RyuJIT Simple Test Harness");
 rootCommand.Options.Add(oConfiguration);
+rootCommand.Options.Add(oJsExpr);
 rootCommand.Options.Add(oCheckout);
 rootCommand.Options.Add(oTempDir);
 rootCommand.Options.Add(oKeepTempDir);
@@ -159,7 +163,9 @@ try {
     if (options.GetValue(oInspect))
         nodeArgs += "--inspect --inspect-wait";
 
-    await RunChildProcess("node", $"{nodeArgs} \"{testHarnessPath}\" {outName}", tempDir);
+    var jsExpr = options.GetValue(oJsExpr) ?? "";
+
+    await RunChildProcess("node", $"{nodeArgs} \"{testHarnessPath}\" {outName} \"{jsExpr}\"", tempDir);
 
     return 0;
 } finally {
