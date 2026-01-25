@@ -15,6 +15,9 @@ Option<string> oConfiguration = new("--config") {
 Option<string> oJsExpr = new("--js-expr") {
     Description = "The javascript expression to evaluate on the loaded module. `module`, `instance` and `exports` are available."
 };
+Option<string> oTestModule = new("--test-module") {
+    Description = "The test JS module to load."
+};  
 Option<DirectoryInfo> oCheckout = new("--checkout") {
     Description = "The location of your .NET checkout."
 };
@@ -46,6 +49,7 @@ Option<FileInfo> oAssembly = new("--assembly") {
 RootCommand rootCommand = new("Wasm RyuJIT Simple Test Harness");
 rootCommand.Options.Add(oConfiguration);
 rootCommand.Options.Add(oJsExpr);
+rootCommand.Options.Add(oTestModule);
 rootCommand.Options.Add(oCheckout);
 rootCommand.Options.Add(oTempDir);
 rootCommand.Options.Add(oKeepTempDir);
@@ -164,8 +168,9 @@ try {
         nodeArgs += "--inspect --inspect-wait";
 
     var jsExpr = options.GetValue(oJsExpr) ?? "";
+    var jsTestModule = options.GetValue(oTestModule) ?? "";
 
-    await RunChildProcess("node", $"{nodeArgs} \"{testHarnessPath}\" {outName} \"{jsExpr}\"", tempDir);
+    await RunChildProcess("node", $"{nodeArgs} \"{testHarnessPath}\" {outName} \"{jsExpr}\" \"{jsTestModule}\"", tempDir);
 
     return 0;
 } finally {
