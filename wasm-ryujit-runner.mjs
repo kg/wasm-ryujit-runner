@@ -18,19 +18,26 @@ try {
     const jsExpression = process.argv[3];
     console.log(`running '${jsExpression}...`);
     const testModule = process.argv[4];
-    console.log(`loading test module '${testModule}'...`);
 
-    doEval(module, instance, instance.exports);
-    function doEval (module, instance, exports) {
+    function doEval(module, instance, exports) {
+        const result = eval(jsExpression);
+        console.log(`result was ${JSON.stringify(result)}`);
+    }
+
+    if (testModule !== '') {
         const testModuleUrl = pathToFileURL(resolve(testModule)).href;
         import (testModuleUrl).then((mod) => { 
-            console.log(`test module loaded: ${Object.keys(mod)}`);
-            const result = eval(jsExpression);
-            console.log(`result was ${JSON.stringify(result)}`);
+            console.log(`test module '${testModuleUrl}' loaded: ${Object.keys(mod)}`);
+            // Make the test module's exports available in the eval context
+            Object.assign(globalThis, mod);
+            doEval(module, instance, instance.exports);
         }).catch((err) => {
             console.error(`error loading test module '${testModuleUrl}': ${err}`);
         });
+    } else {
+        doEval(module, instance, instance.exports);
     }
+
     debugger;
 } catch (err) {
     debugger;
