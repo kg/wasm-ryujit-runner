@@ -8,10 +8,30 @@ try {
     const modulePath = process.argv[2];
     console.log(`Loading ${modulePath}...`);
     const bytes = readFileSync(modulePath);
+
     console.log(`Compiling ${modulePath}...`);
     const module = await WebAssembly.compile(bytes);
+
     console.log(`Instantiating ${modulePath}...`);
-    const imports = {};
+
+    const stackPointer = new WebAssembly.Global({
+        value: "i32",
+        mutable: true,
+    }, 4096);
+    const r2rStart = new WebAssembly.Global({
+        value: "i32",
+        mutable: false,
+    }, stackPointer.value);
+    const imports = {
+        env: {
+            memory: new WebAssembly.Memory({
+                initial: 128,
+            }),
+            __stack_pointer: stackPointer,
+            __r2r_start: r2rStart,
+        },
+    };
+
     const instance = await WebAssembly.instantiate(module, imports);
     console.log(`OK!`);
     console.log(`exports=${JSON.stringify(Object.keys(instance.exports))}`);
