@@ -33,6 +33,9 @@ Option<bool> oAutoBuild = new("--auto-build") {
 Option<bool> oAlwaysBuild = new("--always-build") {
     Description = "Always build the clr+libs subset."
 };
+Option<bool> oDisasm = new("--disasm") {
+    Description = "Ask node/v8 to disassemble wasm functions when compiling them."
+};
 Option<bool> oInspect = new("--inspect") {
     Description = "Pass the --inspect switch to node, enabling debugging."
 };
@@ -55,6 +58,7 @@ rootCommand.Options.Add(oTempDir);
 rootCommand.Options.Add(oKeepTempDir);
 rootCommand.Options.Add(oAutoBuild);
 rootCommand.Options.Add(oAlwaysBuild);
+rootCommand.Options.Add(oDisasm);
 rootCommand.Options.Add(oInspect);
 rootCommand.Options.Add(oR2RPath);
 rootCommand.Options.Add(oTestHarnessPath);
@@ -164,8 +168,10 @@ try {
         throw new FileNotFoundException($"Test harness not found - maybe pass --test-harness-path: {testHarnessPath}");
 
     var nodeArgs = "";
+    if (options.GetValue(oDisasm))
+        nodeArgs += " --print-wasm-code";
     if (options.GetValue(oInspect))
-        nodeArgs += "--inspect --inspect-wait";
+        nodeArgs += " --inspect --inspect-wait";
 
     var jsExpr = options.GetValue(oJsExpr) ?? "";
     var jsTestModule = options.GetValue(oTestModule) ?? "";
