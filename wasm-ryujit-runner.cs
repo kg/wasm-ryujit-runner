@@ -169,7 +169,7 @@ try {
 
     var nodeArgs = "";
     if (options.GetValue(oDisasm))
-        nodeArgs += " --print-wasm-code";
+        nodeArgs += " --print-wasm-code --no-liftoff";
     if (options.GetValue(oInspect))
         nodeArgs += " --inspect --inspect-wait";
 
