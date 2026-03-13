@@ -18,17 +18,22 @@ try {
         value: "i32",
         mutable: true,
     }, 4096);
-    const r2rStart = new WebAssembly.Global({
+    const imageBase = new WebAssembly.Global({
         value: "i32",
         mutable: false,
     }, stackPointer.value);
+    const imagePointerBase = new WebAssembly.Global({
+        value: "i32",
+        mutable: false,
+    }, 0);
     const imports = {
         env: {
             memory: new WebAssembly.Memory({
                 initial: 128,
             }),
             __stack_pointer: stackPointer,
-            __r2r_start: r2rStart,
+            __image_base: imageBase,
+            __image_pointer_base: imagePointerBase,
         },
     };
 
