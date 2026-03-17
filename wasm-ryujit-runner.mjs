@@ -14,6 +14,10 @@ try {
 
     console.log(`Instantiating ${modulePath}...`);
 
+    const memory = new WebAssembly.Memory({
+        initial: 256,
+    });
+
     const stackPointer = new WebAssembly.Global({
         value: "i32",
         mutable: true,
@@ -28,12 +32,10 @@ try {
     }, 0);
     const imports = {
         env: {
-            memory: new WebAssembly.Memory({
-                initial: 128,
-            }),
+            memory: memory,
             __stack_pointer: stackPointer,
             __image_base: imageBase,
-            __image_pointer_base: imagePointerBase,
+            __image_function_pointer_base: imagePointerBase,
         },
     };
 
@@ -45,13 +47,23 @@ try {
     const testModule = process.argv[4];
 
     function doEval(module, instance, exports) {
+        // FIXME: Handle growth during execution
+        const HEAPU8 = new Uint8Array(memory.buffer);
+        const HEAPU16 = new Uint16Array(memory.buffer);
+        const HEAPU32 = new Uint32Array(memory.buffer);
+        const HEAPI8 = new Int8Array(memory.buffer);
+        const HEAPI16 = new Int16Array(memory.buffer);
+        const HEAPI32 = new Int32Array(memory.buffer);
+
+        debugger;
+
         const result = eval(jsExpression);
         console.log(`result was ${JSON.stringify(result)}`);
     }
 
     if (testModule !== '') {
         const testModuleUrl = pathToFileURL(resolve(testModule)).href;
-        import (testModuleUrl).then((mod) => { 
+        import (testModuleUrl).then((mod) => {
             console.log(`test module '${testModuleUrl}' loaded: ${Object.keys(mod)}`);
             // Make the test module's exports available in the eval context
             Object.assign(globalThis, mod);
