@@ -17,7 +17,7 @@ Option<string> oJsExpr = new("--js-expr") {
 };
 Option<string> oTestModule = new("--test-module") {
     Description = "The test JS module to load."
-};  
+};
 Option<DirectoryInfo> oCheckout = new("--checkout") {
     Description = "The location of your .NET checkout."
 };
@@ -113,7 +113,7 @@ if (!Directory.Exists(coreRootPath) || Directory.GetFiles(coreRootPath, "*.dll")
     await RunChildProcess(Path.Combine(checkout, "build.cmd"), $"-c {configuration} -lc Release -os browser clr+libs", checkout);
 
     Log("/// Attempting to build browser core_root...");
-    await RunChildProcess(Path.Combine(checkout, "src", "tests", "build.cmd"), $"wasm browser generatelayoutonly", Path.Combine(checkout, "src", "tests"));
+    await RunChildProcess(Path.Combine(checkout, "src", "tests", "build.cmd"), $"wasm browser generatelayoutonly {configuration}", Path.Combine(checkout, "src", "tests"));
 
     if (!Directory.Exists(coreRootPath) || Directory.GetFiles(coreRootPath, "*.dll").Length == 0)
         throw new Exception($"Build failed to generate core_root at {coreRootPath}!");
