@@ -15,11 +15,11 @@ try {
     console.log(`Instantiating ${modulePath}...`);
 
     const memory = new WebAssembly.Memory({
-        initial: 256,
+        initial: 1024, // FIXME: Parse size out of webcil header
     });
     const table = new WebAssembly.Table({
         element: "anyfunc",
-        initial: 256
+        initial: 102400 // FIXME: Parse size out of webcil header
     });
 
     const stackPointer = new WebAssembly.Global({
@@ -47,6 +47,10 @@ try {
     const instance = await WebAssembly.instantiate(module, imports);
     console.log(`OK!`);
     console.log(`exports=${JSON.stringify(Object.keys(instance.exports))}`);
+    const payloadSize = instance.exports.getWebcilSize();
+    instance.exports.getWebcilPayload(imageBase.value, payloadSize);
+    instance.exports.fillWebcilTable();
+
     const jsExpression = process.argv[3];
     console.log(`running '${jsExpression}...`);
     const testModule = process.argv[4];
