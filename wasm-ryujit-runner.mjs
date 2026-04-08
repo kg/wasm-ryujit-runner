@@ -17,6 +17,10 @@ try {
     const memory = new WebAssembly.Memory({
         initial: 256,
     });
+    const table = new WebAssembly.Table({
+        element: "anyfunc",
+        initial: 256
+    });
 
     const stackPointer = new WebAssembly.Global({
         value: "i32",
@@ -31,11 +35,12 @@ try {
         mutable: false,
     }, 0);
     const imports = {
-        env: {
+        webcil: {
             memory: memory,
-            __stack_pointer: stackPointer,
-            __image_base: imageBase,
-            __image_function_pointer_base: imagePointerBase,
+            table: table,
+            stackPointer: stackPointer,
+            imageBase: imageBase,
+            tableBase: imagePointerBase,
         },
     };
 
