@@ -209,6 +209,37 @@ try {
             outUnixPath = outUnixPath.Substring(2);
         }
 
+        var launchJsonPath = Path.Combine(tempDir, "launch.json");
+        Log($"/// Generating launch.json file for VS code debugging at '{launchJsonPath}'.");
+        File.WriteAllText(launchJsonPath,
+$@"{{
+    ""version"": ""0.2.0"",
+    ""configurations"": [
+        {{
+            ""type"": ""node"",
+            ""request"": ""launch"",
+            ""name"": ""corerun"",
+            ""skipFiles"": [
+                ""<node_internals>/**""
+            ],
+            ""outputCapture"": ""std"",
+            ""program"": ""corerun.js"",
+            ""env"": {{
+            }},
+            ""runtimeArgs"": [
+                ""--stack-trace-limit=1000""
+            ],
+            ""args"": [
+                ""-c"",
+                ""{clrUnixPath}"",
+                ""{outUnixPath}""
+            ],
+            ""cwd"": ""{sandboxPath.Replace("\\", "\\\\")}""
+        }},
+    ]
+}}
+");
+
         await RunChildProcess("node", $"{nodeArgs} ./corerun.js -c {clrUnixPath} {outUnixPath}", sandboxPath);
     } else {
         var testHarnessPath = options.GetValue(oTestHarnessPath)?.FullName ??
