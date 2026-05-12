@@ -13,19 +13,16 @@ Option<string> oConfiguration = new("--config") {
     Description = "The runtime build configuration to use."
 };
 Option<string> oJsExpr = new("--js-expr") {
-    Description = "The javascript expression to evaluate on the loaded module. `module`, `instance` and `exports` are available."
+    Description = "The javascript expression to evaluate on the loaded module. `module`, `instance` and `exports` are available. Not valid with --corerun."
 };
 Option<string> oTestModule = new("--test-module") {
-    Description = "The test JS module to load."
+    Description = "The test JS module to load. Not valid with --corerun."
 };
 Option<DirectoryInfo> oCheckout = new("--checkout") {
     Description = "The location of your .NET checkout."
 };
 Option<DirectoryInfo> oTempDir = new("--temp-dir") {
     Description = "The temporary directory to use."
-};
-Option<bool> oKeepTempDir = new("--keep-temp-dir") {
-    Description = "If the temporary directory is automatically generated, keep it around after running."
 };
 Option<bool> oAutoBuild = new("--auto-build") {
     Description = "Automatically perform builds if necessary."
@@ -39,11 +36,14 @@ Option<bool> oDisasm = new("--disasm") {
 Option<bool> oInspect = new("--inspect") {
     Description = "Pass the --inspect switch to node, enabling debugging."
 };
+Option<bool> oCoreRun = new("--corerun") {
+    Description = "Run the compiled binary using corerun and a coreroot instead of using the legacy test harness.",
+};
 Option<FileInfo> oR2RPath = new("--r2r-path") {
     Description = "The location of the R2R binary."
 };
 Option<FileInfo> oTestHarnessPath = new("--test-harness-path") {
-    Description = "The location of the test harness."
+    Description = "The location of the test harness. Not necessary with --corerun."
 };
 Option<FileInfo> oAssembly = new("--assembly") {
     Description = "The assembly to R2R compile."
@@ -55,11 +55,11 @@ rootCommand.Options.Add(oJsExpr);
 rootCommand.Options.Add(oTestModule);
 rootCommand.Options.Add(oCheckout);
 rootCommand.Options.Add(oTempDir);
-rootCommand.Options.Add(oKeepTempDir);
 rootCommand.Options.Add(oAutoBuild);
 rootCommand.Options.Add(oAlwaysBuild);
 rootCommand.Options.Add(oDisasm);
 rootCommand.Options.Add(oInspect);
+rootCommand.Options.Add(oCoreRun);
 rootCommand.Options.Add(oR2RPath);
 rootCommand.Options.Add(oTestHarnessPath);
 rootCommand.Options.Add(oAssembly);
@@ -120,12 +120,19 @@ if (!Directory.Exists(coreRootPath) || Directory.GetFiles(coreRootPath, "*.dll")
 }
 
 var tempDir = options.GetValue(oTempDir)?.FullName;
-var keepTempDir = (tempDir != null) && Directory.Exists(tempDir);
 if (tempDir == null) {
-    tempDir = Path.GetTempFileName();
-    File.Delete(tempDir);
+    tempDir = Path.Combine(Path.GetTempPath(), "wasm-ryujit-runner");
+    Log($"/// Creating clean temporary directory at '{tempDir}'...");
+    try {
+        // Clean the existing shared temporary directory before using it.
+        // Note that we don't do this for a user-provided temp folder since it might have other files in it.
+        if (Directory.Exists(tempDir))
+            Directory.Delete(tempDir, true);
+    } catch (Exception exc) {
+        // Cleanup may fail, just log and continue.
+        Log($"/// WARNING: Failed to clean existing temporary directory with exception {exc}");
+    }
     Directory.CreateDirectory(tempDir);
-    keepTempDir = options.GetValue(oKeepTempDir);
 }
 
 try {
@@ -162,28 +169,62 @@ try {
     else
         Log($"/// '{outPath}' generated. Starting test harness...");
 
-    var testHarnessPath = options.GetValue(oTestHarnessPath)?.FullName ??
-        Path.Combine(Path.GetDirectoryName(GetMySourceFilePath()), "wasm-ryujit-runner.mjs");
-    if (!File.Exists(testHarnessPath))
-        throw new FileNotFoundException($"Test harness not found - maybe pass --test-harness-path: {testHarnessPath}");
-
     var nodeArgs = "";
     if (options.GetValue(oDisasm))
         nodeArgs += " --print-wasm-code --no-liftoff";
     if (options.GetValue(oInspect))
         nodeArgs += " --inspect --inspect-wait";
 
-    var jsExpr = options.GetValue(oJsExpr) ?? "";
-    var jsTestModule = options.GetValue(oTestModule) ?? "";
+    if (options.GetValue(oCoreRun)) {
+        var corerunPath = Path.Combine(checkout, "artifacts", "bin", "coreclr", $"browser.wasm.{configuration}");
+        var sandboxPath = Path.Combine(tempDir, "sandbox");
 
-    await RunChildProcess("node", $"{nodeArgs} \"{testHarnessPath}\" {outName} \"{jsExpr}\" \"{jsTestModule}\"", tempDir);
+        Log($"/// Assembling execution sandbox at '{sandboxPath}' from '{corerunPath}'...");
+        (string source, string dest)[] deps = [
+            (outPath, Path.Combine(".", "IL")),
+            // HACK: Copy BCL libraries from coreroot because they will be needed.
+            (Path.Combine(coreRootPath, "*.dll"), Path.Combine(".", "IL")),
+            (Path.Combine(coreRootPath, "*.pdb"), Path.Combine(".", "IL")),
+            // Then copy dlls and PDBs from the corerun folder (it doesn't have many) and overwrite.
+            (Path.Combine(corerunPath, "IL", "*.dll"), Path.Combine(".", "IL")),
+            (Path.Combine(corerunPath, "IL", "*.pdb"), Path.Combine(".", "IL")),
+            (Path.Combine(corerunPath, "corerun.*"), "."),
+        ];
+
+        foreach (var dep in deps) {
+            var searchDir = Path.GetDirectoryName(dep.source);
+            var searchPattern = Path.GetFileName(dep.source);
+            Log($"/// {dep.source} -> {Path.Combine(sandboxPath, dep.dest)}...");
+            foreach (var file in Directory.EnumerateFiles(searchDir, searchPattern)) {
+                var destination = Path.Combine(sandboxPath, dep.dest, Path.GetFileName(file));
+                Directory.CreateDirectory(Path.Combine(sandboxPath, dep.dest));
+                File.Copy(file, destination, true);
+            }
+        }
+
+        var clrUnixPath = new Uri(Path.Combine(sandboxPath, "IL")).AbsolutePath;
+        var outUnixPath = new Uri(Path.Combine(sandboxPath, "IL", Path.GetFileName(outPath))).AbsolutePath;
+        if (clrUnixPath[1] == ':') {
+            clrUnixPath = clrUnixPath.Substring(2);
+            outUnixPath = outUnixPath.Substring(2);
+        }
+
+        await RunChildProcess("node", $"{nodeArgs} ./corerun.js -c {clrUnixPath} {outUnixPath}", sandboxPath);
+    } else {
+        var testHarnessPath = options.GetValue(oTestHarnessPath)?.FullName ??
+            Path.Combine(Path.GetDirectoryName(GetMySourceFilePath()), "wasm-ryujit-runner.mjs");
+        if (!File.Exists(testHarnessPath))
+            throw new FileNotFoundException($"Test harness not found - maybe pass --test-harness-path: {testHarnessPath}");
+
+        var jsExpr = options.GetValue(oJsExpr) ?? "";
+        var jsTestModule = options.GetValue(oTestModule) ?? "";
+
+        await RunChildProcess("node", $"{nodeArgs} \"{testHarnessPath}\" {outName} \"{jsExpr}\" \"{jsTestModule}\"", tempDir);
+    }
 
     return 0;
 } finally {
-    if (!keepTempDir) {
-        Log($"/// Delete '{tempDir}'...");
-        Directory.Delete(tempDir, true);
-    }
+    // Temporary directory no longer cleaned up at end of run, only at start of run
 }
 
 static string GetMySourceFilePath ([CallerFilePath]string filePath = "") =>
